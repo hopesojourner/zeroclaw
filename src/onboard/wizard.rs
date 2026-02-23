@@ -4984,7 +4984,7 @@ mod tests {
 
         let config = Config {
             workspace_dir: tmp.path().to_path_buf(),
-            default_provider: Some("venice".to_string()),
+            default_provider: Some("__unsupported__".to_string()),
             ..Config::default()
         };
 

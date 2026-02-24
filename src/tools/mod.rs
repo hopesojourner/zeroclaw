@@ -81,7 +81,7 @@ pub use model_routing_config::ModelRoutingConfigTool;
 pub use pdf_read::PdfReadTool;
 pub use proxy_config::ProxyConfigTool;
 pub use pushover::PushoverTool;
-pub use propose_config_change::ProposeConfigChangeTool;
+pub use propose_config_change::ProposeChangeTool;
 pub use schedule::ScheduleTool;
 #[allow(unused_imports)]
 pub use schema::{CleaningStrategy, SchemaCleanr};
@@ -233,7 +233,7 @@ pub fn all_tools_with_runtime(
             workspace_dir.to_path_buf(),
         )),
         Arc::new(WriteMemoryTool::new(security.clone())),
-        Arc::new(ProposeConfigChangeTool::new(security.clone())),
+        Arc::new(ProposeChangeTool::new(security.clone())),
     ];
 
     if browser_config.enabled {

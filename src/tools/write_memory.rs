@@ -6,11 +6,16 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Append a timestamped note to the agent's persistent memory notes file.
+/// Append a timestamped, optionally tagged note to the agent's persistent
+/// memory notes file.
 ///
-/// Writes are restricted to `memory/notes.md` within the workspace directory.
+/// Output is hard-coded to `<workspace>/ariadne/memory/notes.md`.
 /// The tool never reads from or writes to any path outside that single file.
 /// Each note is appended with a UTC timestamp so the history is preserved.
+///
+/// # Security
+/// - Path is not accepted from model input — it is always the fixed file above.
+/// - Gated by the existing `SecurityPolicy` (autonomy level + rate limiter).
 pub struct WriteMemoryTool {
     security: Arc<SecurityPolicy>,
 }
@@ -22,7 +27,11 @@ impl WriteMemoryTool {
 
     /// Absolute path of the notes file within the workspace.
     fn notes_path(&self) -> PathBuf {
-        self.security.workspace_dir.join("memory").join("notes.md")
+        self.security
+            .workspace_dir
+            .join("ariadne")
+            .join("memory")
+            .join("notes.md")
     }
 }
 
@@ -33,35 +42,56 @@ impl Tool for WriteMemoryTool {
     }
 
     fn description(&self) -> &str {
-        "Append a note to the agent's persistent memory notes file (memory/notes.md in the workspace). Each note is timestamped and preserved. Use for observations, decisions, preferences, or reminders that should persist across sessions."
+        "Append a timestamped note to the agent's persistent memory file (ariadne/memory/notes.md). \
+         Optionally tag the note for later filtering. Each call appends — existing notes are never \
+         overwritten. Use for observations, decisions, preferences, or reminders that should persist \
+         across sessions."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "note": {
+                "text": {
                     "type": "string",
                     "description": "The note to append. Plain text or Markdown."
+                },
+                "tags": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Optional list of tags for categorisation (e.g. [\"decision\", \"project-x\"])."
                 }
             },
-            "required": ["note"]
+            "required": ["text"]
         })
     }
 
     async fn execute(&self, args: serde_json::Value) -> anyhow::Result<ToolResult> {
-        let note = args
-            .get("note")
+        let text = args
+            .get("text")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'note' parameter"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing 'text' parameter"))?;
 
-        if note.trim().is_empty() {
+        let text = text.trim();
+        if text.is_empty() {
             return Ok(ToolResult {
                 success: false,
                 output: String::new(),
-                error: Some("Note must not be empty".into()),
+                error: Some("text must not be empty".into()),
             });
         }
+
+        // Collect optional tags
+        let tags: Vec<String> = args
+            .get("tags")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|t| t.as_str())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
 
         if let Err(err) = self
             .security
@@ -81,9 +111,14 @@ impl Tool for WriteMemoryTool {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        // Build the entry: UTC timestamp + note body
-        let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
-        let entry = format!("\n## {timestamp}\n\n{note}\n");
+        let ts = chrono::Utc::now().to_rfc3339();
+        let tag_str = if tags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", tags.join(", "))
+        };
+
+        let entry = format!("\n\n---\n**{}**{}\n\n{}\n", ts, tag_str, text);
 
         // Append-only: never truncate existing content
         use tokio::io::AsyncWriteExt as _;
@@ -143,27 +178,47 @@ mod tests {
         let tool = WriteMemoryTool::new(supervised(tmp.path().to_path_buf()));
         assert_eq!(tool.name(), "write_memory");
         let schema = tool.parameters_schema();
-        assert!(schema["properties"]["note"].is_object());
+        assert!(schema["properties"]["text"].is_object());
+        assert!(schema["properties"]["tags"].is_object());
         let required = schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("note")));
+        assert!(required.contains(&json!("text")));
+        // tags is optional — must NOT appear in required
+        assert!(!required.contains(&json!("tags")));
     }
 
     #[tokio::test]
-    async fn appends_note_and_creates_file() {
+    async fn appends_note_creates_file_in_ariadne_memory() {
         let tmp = TempDir::new().unwrap();
         let tool = WriteMemoryTool::new(supervised(tmp.path().to_path_buf()));
 
         let result = tool
-            .execute(json!({"note": "First observation"}))
+            .execute(json!({"text": "First observation"}))
             .await
             .unwrap();
         assert!(result.success, "unexpected error: {:?}", result.error);
 
-        let content = tokio::fs::read_to_string(tmp.path().join("memory/notes.md"))
+        let expected_path = tmp.path().join("ariadne/memory/notes.md");
+        let content = tokio::fs::read_to_string(&expected_path).await.unwrap();
+        assert!(content.contains("First observation"));
+        assert!(content.contains("---")); // separator
+    }
+
+    #[tokio::test]
+    async fn includes_tags_in_entry() {
+        let tmp = TempDir::new().unwrap();
+        let tool = WriteMemoryTool::new(supervised(tmp.path().to_path_buf()));
+
+        tool.execute(json!({"text": "Decided to use SQLite", "tags": ["decision", "db"]}))
             .await
             .unwrap();
-        assert!(content.contains("First observation"));
-        assert!(content.contains("##")); // timestamp heading
+
+        let content =
+            tokio::fs::read_to_string(tmp.path().join("ariadne/memory/notes.md"))
+                .await
+                .unwrap();
+        assert!(content.contains("decision"));
+        assert!(content.contains("db"));
+        assert!(content.contains("Decided to use SQLite"));
     }
 
     #[tokio::test]
@@ -171,12 +226,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let tool = WriteMemoryTool::new(supervised(tmp.path().to_path_buf()));
 
-        tool.execute(json!({"note": "Note A"})).await.unwrap();
-        tool.execute(json!({"note": "Note B"})).await.unwrap();
+        tool.execute(json!({"text": "Note A"})).await.unwrap();
+        tool.execute(json!({"text": "Note B"})).await.unwrap();
 
-        let content = tokio::fs::read_to_string(tmp.path().join("memory/notes.md"))
-            .await
-            .unwrap();
+        let content =
+            tokio::fs::read_to_string(tmp.path().join("ariadne/memory/notes.md"))
+                .await
+                .unwrap();
         assert!(content.contains("Note A"));
         assert!(content.contains("Note B"));
     }
@@ -187,7 +243,7 @@ mod tests {
         let tool = WriteMemoryTool::new(readonly(tmp.path().to_path_buf()));
 
         let result = tool
-            .execute(json!({"note": "should be blocked"}))
+            .execute(json!({"text": "should be blocked"}))
             .await
             .unwrap();
         assert!(!result.success);
@@ -196,7 +252,7 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("read-only mode"));
-        assert!(!tmp.path().join("memory/notes.md").exists());
+        assert!(!tmp.path().join("ariadne/memory/notes.md").exists());
     }
 
     #[tokio::test]
@@ -205,7 +261,7 @@ mod tests {
         let tool = WriteMemoryTool::new(rate_limited(tmp.path().to_path_buf()));
 
         let result = tool
-            .execute(json!({"note": "should be blocked"}))
+            .execute(json!({"text": "should be blocked"}))
             .await
             .unwrap();
         assert!(!result.success);
@@ -214,24 +270,26 @@ mod tests {
             .as_deref()
             .unwrap_or("")
             .contains("Rate limit"));
-        assert!(!tmp.path().join("memory/notes.md").exists());
+        assert!(!tmp.path().join("ariadne/memory/notes.md").exists());
     }
 
     #[tokio::test]
-    async fn empty_note_rejected() {
+    async fn empty_text_rejected() {
         let tmp = TempDir::new().unwrap();
         let tool = WriteMemoryTool::new(supervised(tmp.path().to_path_buf()));
 
-        let result = tool.execute(json!({"note": "  "})).await.unwrap();
+        let result = tool.execute(json!({"text": "  "})).await.unwrap();
         assert!(!result.success);
         assert!(result.error.as_deref().unwrap_or("").contains("empty"));
     }
 
     #[tokio::test]
-    async fn missing_note_param_is_error() {
+    async fn missing_text_param_is_error() {
         let tmp = TempDir::new().unwrap();
         let tool = WriteMemoryTool::new(supervised(tmp.path().to_path_buf()));
         let result = tool.execute(json!({})).await;
         assert!(result.is_err());
     }
 }
+
+

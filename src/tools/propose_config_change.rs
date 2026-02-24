@@ -6,21 +6,20 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Write a configuration change proposal to the operator staging directory.
+/// Write a staged change proposal for human review.
 ///
-/// The agent calls this tool to *propose* changes to Ariadne's identity,
-/// operational baseline, or companion mode configuration files. The proposal is
-/// written as a plain Markdown file under `ariadne/proposals/` in the workspace
-/// and **never** applied automatically. An operator must review and manually
-/// apply approved proposals.
+/// The agent calls this tool to propose changes to any Ariadne configuration,
+/// prompt layer, code, or operational behaviour. The proposal is written as a
+/// Markdown file under `<workspace>/ariadne/proposals/` and is **never** applied
+/// automatically. A human operator must review, approve, and manually apply it.
 ///
-/// Proposal files are named with a UTC timestamp and a short slug derived from
-/// the `target` field (e.g. `2024-03-01T12:00:00Z-core-identity.md`).
-pub struct ProposeConfigChangeTool {
+/// Proposal files are named `<rfc3339-timestamp>_<slug>.md` using `create_new`
+/// so an existing proposal cannot be silently overwritten.
+pub struct ProposeChangeTool {
     security: Arc<SecurityPolicy>,
 }
 
-impl ProposeConfigChangeTool {
+impl ProposeChangeTool {
     pub fn new(security: Arc<SecurityPolicy>) -> Self {
         Self { security }
     }
@@ -33,99 +32,135 @@ impl ProposeConfigChangeTool {
     }
 }
 
-/// Allowed proposal targets.  Only these symbolic names are accepted so the
-/// agent cannot propose changes to arbitrary system paths.
-const ALLOWED_TARGETS: &[&str] = &[
-    "core-identity",
-    "operational-baseline",
-    "companion-mode",
-    "guardrails",
-    "state-machine",
-];
-
-fn is_allowed_target(target: &str) -> bool {
-    ALLOWED_TARGETS.contains(&target)
+/// Derive a URL-safe filename slug from a proposal title.
+///
+/// Lowercases, replaces non-alphanumeric chars with `-`, deduplicates `-`,
+/// and takes at most 8 segments to keep filenames short.
+fn slugify(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .split('-')
+        .filter(|p| !p.is_empty())
+        .take(8)
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 #[async_trait]
-impl Tool for ProposeConfigChangeTool {
+impl Tool for ProposeChangeTool {
     fn name(&self) -> &str {
-        "propose_config_change"
+        "propose_change"
     }
 
     fn description(&self) -> &str {
-        "Propose a change to an Ariadne configuration file. Writes the proposal to ariadne/proposals/ for operator review. The proposal is NEVER applied automatically — a human operator must approve and apply it. Allowed targets: core-identity, operational-baseline, companion-mode, guardrails, state-machine."
+        "Write a change proposal to ariadne/proposals/ for operator review. \
+         The proposal is NEVER applied automatically — a human operator must \
+         approve and apply it. Include a unified diff, rationale, test plan, \
+         and risk notes."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "target": {
+                "title": {
                     "type": "string",
-                    "description": "The configuration section to propose changes for. Allowed values: core-identity, operational-baseline, companion-mode, guardrails, state-machine.",
-                    "enum": ["core-identity", "operational-baseline", "companion-mode", "guardrails", "state-machine"]
+                    "description": "Short title for the proposal (used in the filename slug)."
                 },
-                "rationale": {
+                "summary": {
                     "type": "string",
-                    "description": "Explanation of why this change is proposed and what problem it solves."
+                    "description": "Human-readable explanation of what is being proposed and why."
                 },
-                "proposed_content": {
+                "files": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Informational list of files affected by the proposal."
+                },
+                "diff": {
                     "type": "string",
-                    "description": "The proposed new content or patch description. Plain text or unified diff."
+                    "description": "Unified diff (patch) representing the proposed change."
+                },
+                "test_plan": {
+                    "type": "string",
+                    "description": "How the operator should verify the change is correct."
+                },
+                "risk": {
+                    "type": "string",
+                    "description": "Risk notes: what could go wrong and how to mitigate it."
                 }
             },
-            "required": ["target", "rationale", "proposed_content"]
+            "required": ["title", "summary", "diff"]
         })
     }
 
     async fn execute(&self, args: serde_json::Value) -> anyhow::Result<ToolResult> {
-        let target = args
-            .get("target")
+        let title = args
+            .get("title")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'target' parameter"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing 'title' parameter"))?
+            .trim();
 
-        let rationale = args
-            .get("rationale")
+        let summary = args
+            .get("summary")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'rationale' parameter"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing 'summary' parameter"))?
+            .trim();
 
-        let proposed_content = args
-            .get("proposed_content")
+        let diff = args
+            .get("diff")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Missing 'proposed_content' parameter"))?;
+            .ok_or_else(|| anyhow::anyhow!("Missing 'diff' parameter"))?
+            .trim();
 
-        // Validate target against the allowlist
-        if !is_allowed_target(target) {
+        if title.is_empty() {
             return Ok(ToolResult {
                 success: false,
                 output: String::new(),
-                error: Some(format!(
-                    "Unknown proposal target '{target}'. Allowed: {}",
-                    ALLOWED_TARGETS.join(", ")
-                )),
+                error: Some("title must not be empty".into()),
             });
         }
-
-        if rationale.trim().is_empty() {
+        if summary.is_empty() {
             return Ok(ToolResult {
                 success: false,
                 output: String::new(),
-                error: Some("Rationale must not be empty".into()),
+                error: Some("summary must not be empty".into()),
             });
         }
-
-        if proposed_content.trim().is_empty() {
+        if diff.is_empty() {
             return Ok(ToolResult {
                 success: false,
                 output: String::new(),
-                error: Some("Proposed content must not be empty".into()),
+                error: Some("diff must not be empty".into()),
             });
         }
+
+        // Collect optional fields
+        let files: Vec<String> = args
+            .get("files")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|f| f.as_str())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let test_plan = args
+            .get("test_plan")
+            .and_then(|v| v.as_str())
+            .unwrap_or("_(not provided)_");
+
+        let risk = args
+            .get("risk")
+            .and_then(|v| v.as_str())
+            .unwrap_or("_(not provided)_");
 
         if let Err(err) = self
             .security
-            .enforce_tool_operation(ToolOperation::Act, "propose_config_change")
+            .enforce_tool_operation(ToolOperation::Act, "propose_change")
         {
             return Ok(ToolResult {
                 success: false,
@@ -137,25 +172,52 @@ impl Tool for ProposeConfigChangeTool {
         let proposals_dir = self.proposals_dir();
         tokio::fs::create_dir_all(&proposals_dir).await?;
 
-        let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
-        let filename = format!("{timestamp}-{target}.md");
+        let ts = chrono::Utc::now().to_rfc3339();
+        // RFC 3339 colons are not safe in filenames on all platforms
+        let ts_safe = ts.replace(':', "-");
+        let slug = slugify(title);
+        let filename = format!("{}_{}.md", ts_safe, slug);
         let proposal_path = proposals_dir.join(&filename);
 
-        let proposal_content = format!(
-            "# Config Change Proposal: {target}\n\n\
-             **Status**: PENDING OPERATOR REVIEW\n\
-             **Proposed at**: {timestamp}\n\
-             **Target**: `{target}`\n\n\
-             ## Rationale\n\n\
-             {rationale}\n\n\
-             ## Proposed Content\n\n\
-             {proposed_content}\n\n\
+        let files_md = if files.is_empty() {
+            "_(not specified)_".to_string()
+        } else {
+            files
+                .iter()
+                .map(|f| format!("- {f}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let body = format!(
+            "# Proposal: {title}\n\n\
+             **Timestamp:** {ts}\n\
+             **Status:** PENDING OPERATOR REVIEW\n\n\
+             ## Summary\n\n\
+             {summary}\n\n\
+             ## Files (informational)\n\n\
+             {files_md}\n\n\
+             ## Patch (unified diff)\n\n\
+             ```diff\n\
+             {diff}\n\
+             ```\n\n\
+             ## Test Plan\n\n\
+             {test_plan}\n\n\
+             ## Risk / Notes\n\n\
+             {risk}\n\n\
              ---\n\
-             *This proposal was generated by the agent. It must be reviewed and manually \
+             *This proposal was generated by the agent and must be reviewed and manually \
              applied by an operator. No automatic changes are made.*\n"
         );
 
-        tokio::fs::write(&proposal_path, &proposal_content).await?;
+        // create_new: fail if the file already exists (prevents overwrite)
+        use tokio::io::AsyncWriteExt as _;
+        let mut file = tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&proposal_path)
+            .await?;
+        file.write_all(body.as_bytes()).await?;
 
         Ok(ToolResult {
             success: true,
@@ -202,107 +264,96 @@ mod tests {
     #[test]
     fn name_and_schema() {
         let tmp = TempDir::new().unwrap();
-        let tool = ProposeConfigChangeTool::new(supervised(tmp.path().to_path_buf()));
-        assert_eq!(tool.name(), "propose_config_change");
+        let tool = ProposeChangeTool::new(supervised(tmp.path().to_path_buf()));
+        assert_eq!(tool.name(), "propose_change");
         let schema = tool.parameters_schema();
-        assert!(schema["properties"]["target"].is_object());
-        assert!(schema["properties"]["rationale"].is_object());
-        assert!(schema["properties"]["proposed_content"].is_object());
+        assert!(schema["properties"]["title"].is_object());
+        assert!(schema["properties"]["summary"].is_object());
+        assert!(schema["properties"]["files"].is_object());
+        assert!(schema["properties"]["diff"].is_object());
+        assert!(schema["properties"]["test_plan"].is_object());
+        assert!(schema["properties"]["risk"].is_object());
         let required = schema["required"].as_array().unwrap();
-        assert!(required.contains(&json!("target")));
-        assert!(required.contains(&json!("rationale")));
-        assert!(required.contains(&json!("proposed_content")));
+        assert!(required.contains(&json!("title")));
+        assert!(required.contains(&json!("summary")));
+        assert!(required.contains(&json!("diff")));
+        // optional fields must not be in required
+        assert!(!required.contains(&json!("files")));
+        assert!(!required.contains(&json!("test_plan")));
+        assert!(!required.contains(&json!("risk")));
     }
 
     #[tokio::test]
-    async fn creates_proposal_file() {
+    async fn creates_proposal_file_with_all_fields() {
         let tmp = TempDir::new().unwrap();
-        let tool = ProposeConfigChangeTool::new(supervised(tmp.path().to_path_buf()));
+        let tool = ProposeChangeTool::new(supervised(tmp.path().to_path_buf()));
 
         let result = tool
             .execute(json!({
-                "target": "core-identity",
-                "rationale": "Add resilience attribute",
-                "proposed_content": "## Resilience\n\nAriadne adapts under uncertainty."
+                "title": "Add resilience attribute",
+                "summary": "Introduce resilience to core-identity so Ariadne adapts under uncertainty.",
+                "files": ["ai/ariadne/core-identity.md"],
+                "diff": "--- a/ai/ariadne/core-identity.md\n+++ b/ai/ariadne/core-identity.md\n@@ -5 +5 @@\n+- **Resilient**: Adapts calmly under uncertainty.",
+                "test_plan": "Read the prompt in OPERATIONAL mode and verify no regression.",
+                "risk": "Low — additive change to identity invariants."
             }))
             .await
             .unwrap();
 
         assert!(result.success, "unexpected error: {:?}", result.error);
-        assert!(result.output.contains("Proposal written to"));
         assert!(result.output.contains("awaiting operator review"));
 
-        // Verify at least one proposal file exists
         let proposals_dir = tmp.path().join("ariadne/proposals");
         let mut entries = tokio::fs::read_dir(&proposals_dir).await.unwrap();
         let entry = entries.next_entry().await.unwrap().unwrap();
         let name = entry.file_name();
-        let name = name.to_string_lossy();
-        assert!(name.contains("core-identity"));
-        assert!(name.ends_with(".md"));
+        let name_str = name.to_string_lossy();
+        assert!(name_str.contains("add-resilience-attribute"));
+        assert!(name_str.ends_with(".md"));
 
         let content = tokio::fs::read_to_string(entry.path()).await.unwrap();
         assert!(content.contains("Add resilience attribute"));
         assert!(content.contains("PENDING OPERATOR REVIEW"));
-        assert!(content.contains("must be reviewed"));
+        assert!(content.contains("core-identity.md"));
+        assert!(content.contains("```diff"));
+        assert!(content.contains("Add resilience"));
+        assert!(content.contains("No automatic changes are made"));
     }
 
     #[tokio::test]
-    async fn rejects_unknown_target() {
+    async fn creates_proposal_with_minimal_fields() {
         let tmp = TempDir::new().unwrap();
-        let tool = ProposeConfigChangeTool::new(supervised(tmp.path().to_path_buf()));
+        let tool = ProposeChangeTool::new(supervised(tmp.path().to_path_buf()));
 
         let result = tool
             .execute(json!({
-                "target": "../../etc/passwd",
-                "rationale": "evil",
-                "proposed_content": "bad"
+                "title": "Tune task keywords",
+                "summary": "Add 'deploy' to task indicators.",
+                "diff": "+  \"deploy\","
             }))
             .await
             .unwrap();
 
-        assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Unknown proposal target"));
-        // No proposal files should have been created
-        assert!(!tmp.path().join("ariadne/proposals").exists());
-    }
+        assert!(result.success, "unexpected error: {:?}", result.error);
 
-    #[tokio::test]
-    async fn rejects_empty_rationale() {
-        let tmp = TempDir::new().unwrap();
-        let tool = ProposeConfigChangeTool::new(supervised(tmp.path().to_path_buf()));
-
-        let result = tool
-            .execute(json!({
-                "target": "core-identity",
-                "rationale": "   ",
-                "proposed_content": "some change"
-            }))
-            .await
-            .unwrap();
-
-        assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Rationale must not be empty"));
+        let proposals_dir = tmp.path().join("ariadne/proposals");
+        let mut entries = tokio::fs::read_dir(&proposals_dir).await.unwrap();
+        let entry = entries.next_entry().await.unwrap().unwrap();
+        let content = tokio::fs::read_to_string(entry.path()).await.unwrap();
+        assert!(content.contains("_(not provided)_"));   // test_plan
+        assert!(content.contains("_(not specified)_"));  // files
     }
 
     #[tokio::test]
     async fn blocked_in_readonly_mode() {
         let tmp = TempDir::new().unwrap();
-        let tool = ProposeConfigChangeTool::new(readonly(tmp.path().to_path_buf()));
+        let tool = ProposeChangeTool::new(readonly(tmp.path().to_path_buf()));
 
         let result = tool
             .execute(json!({
-                "target": "operational-baseline",
-                "rationale": "test rationale",
-                "proposed_content": "test content"
+                "title": "test",
+                "summary": "test",
+                "diff": "test"
             }))
             .await
             .unwrap();
@@ -319,13 +370,13 @@ mod tests {
     #[tokio::test]
     async fn blocked_when_rate_limited() {
         let tmp = TempDir::new().unwrap();
-        let tool = ProposeConfigChangeTool::new(rate_limited(tmp.path().to_path_buf()));
+        let tool = ProposeChangeTool::new(rate_limited(tmp.path().to_path_buf()));
 
         let result = tool
             .execute(json!({
-                "target": "companion-mode",
-                "rationale": "test",
-                "proposed_content": "test"
+                "title": "test",
+                "summary": "test",
+                "diff": "test"
             }))
             .await
             .unwrap();
@@ -339,20 +390,54 @@ mod tests {
         assert!(!tmp.path().join("ariadne/proposals").exists());
     }
 
-    #[test]
-    fn allowed_targets_are_all_valid() {
-        for target in ALLOWED_TARGETS {
-            assert!(is_allowed_target(target), "target should be allowed: {target}");
-        }
+    #[tokio::test]
+    async fn rejects_empty_title() {
+        let tmp = TempDir::new().unwrap();
+        let tool = ProposeChangeTool::new(supervised(tmp.path().to_path_buf()));
+        let result = tool
+            .execute(json!({"title": "", "summary": "s", "diff": "d"}))
+            .await
+            .unwrap();
+        assert!(!result.success);
+        assert!(result.error.as_deref().unwrap_or("").contains("title"));
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_summary() {
+        let tmp = TempDir::new().unwrap();
+        let tool = ProposeChangeTool::new(supervised(tmp.path().to_path_buf()));
+        let result = tool
+            .execute(json!({"title": "t", "summary": "  ", "diff": "d"}))
+            .await
+            .unwrap();
+        assert!(!result.success);
+        assert!(result.error.as_deref().unwrap_or("").contains("summary"));
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_diff() {
+        let tmp = TempDir::new().unwrap();
+        let tool = ProposeChangeTool::new(supervised(tmp.path().to_path_buf()));
+        let result = tool
+            .execute(json!({"title": "t", "summary": "s", "diff": ""}))
+            .await
+            .unwrap();
+        assert!(!result.success);
+        assert!(result.error.as_deref().unwrap_or("").contains("diff"));
     }
 
     #[test]
-    fn disallowed_targets_rejected() {
-        for bad in &["/etc/passwd", "../../escape", "shell", "memory_store", ""] {
-            assert!(
-                !is_allowed_target(bad),
-                "target should NOT be allowed: {bad}"
-            );
-        }
+    fn slugify_normalises_title() {
+        assert_eq!(slugify("Add resilience attribute"), "add-resilience-attribute");
+        assert_eq!(slugify("Fix: memory/notes path"), "fix-memory-notes-path");
+        assert_eq!(slugify("  spaces  everywhere  "), "spaces-everywhere");
+    }
+
+    #[test]
+    fn slugify_limits_segments() {
+        let long = "one two three four five six seven eight nine ten";
+        let slug = slugify(long);
+        // At most 8 segments
+        assert!(slug.split('-').count() <= 8);
     }
 }

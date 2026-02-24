@@ -64,10 +64,10 @@ class StateOverrideTool:
                 "message": "Authentication failed. Override rejected.",
             }
 
-        self._audit("OVERRIDE_APPLIED", target_state, "authorised")
+        self._audit("OVERRIDE_APPLIED", target_state, "authorized")
         return {
             "status": "ok",
-            "message": f"State override to '{target_state}' authorised and logged.",
+            "message": f"State override to '{target_state}' authorized and logged.",
         }
 
     # ------------------------------------------------------------------

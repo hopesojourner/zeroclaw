@@ -4,9 +4,9 @@
 # Intended for local testing, development, and operator-level access.
 #
 # Usage:
-#   zero-claw talk --channel cli --state operational
-#   zero-claw talk --channel cli --state companion
-#   zero-claw talk --channel cli --state administrative
+#   zeroclaw agent --channel cli --state operational
+#   zeroclaw agent --channel cli --state companion
+#   zeroclaw agent --channel cli --state administrative
 #
 # Administrative state requires operator token authentication even via CLI.
 #

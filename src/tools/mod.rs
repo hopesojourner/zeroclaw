@@ -42,6 +42,7 @@ pub mod memory_recall;
 pub mod memory_store;
 pub mod model_routing_config;
 pub mod pdf_read;
+pub mod propose_config_change;
 pub mod proxy_config;
 pub mod pushover;
 pub mod schedule;
@@ -50,6 +51,7 @@ pub mod screenshot;
 pub mod shell;
 pub mod traits;
 pub mod web_search_tool;
+pub mod write_memory;
 
 pub use browser::{BrowserTool, ComputerUseConfig};
 pub use browser_open::BrowserOpenTool;
@@ -79,6 +81,7 @@ pub use model_routing_config::ModelRoutingConfigTool;
 pub use pdf_read::PdfReadTool;
 pub use proxy_config::ProxyConfigTool;
 pub use pushover::PushoverTool;
+pub use propose_config_change::ProposeConfigChangeTool;
 pub use schedule::ScheduleTool;
 #[allow(unused_imports)]
 pub use schema::{CleaningStrategy, SchemaCleanr};
@@ -88,6 +91,7 @@ pub use traits::Tool;
 #[allow(unused_imports)]
 pub use traits::{ToolResult, ToolSpec};
 pub use web_search_tool::WebSearchTool;
+pub use write_memory::WriteMemoryTool;
 
 use crate::config::{Config, DelegateAgentConfig};
 use crate::memory::Memory;
@@ -228,6 +232,8 @@ pub fn all_tools_with_runtime(
             security.clone(),
             workspace_dir.to_path_buf(),
         )),
+        Arc::new(WriteMemoryTool::new(security.clone())),
+        Arc::new(ProposeConfigChangeTool::new(security.clone())),
     ];
 
     if browser_config.enabled {

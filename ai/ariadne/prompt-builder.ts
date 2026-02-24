@@ -70,3 +70,61 @@ export function buildAriadnePromptWithContext(
   const basePrompt = buildAriadnePrompt(mode);
   return `${contextBlock}\n\n${basePrompt}`;
 }
+
+/**
+ * Enhanced context manager with memory-aware topic weighting.
+ *
+ * Tracks topic relevance across conversation turns and builds context-aware
+ * prompts with automatic relevance scoring.  The manager is stateful and
+ * should be created once per conversation session.
+ */
+export class EnhancedContextManager {
+  private readonly topicWeights = new Map<string, number>();
+  private projectContext: string | undefined;
+
+  /**
+   * Record a topic from the current turn, incrementing its relevance weight.
+   * Call this each time a topic appears in a conversation message.
+   */
+  public recordTopic(topic: string): void {
+    const current = this.topicWeights.get(topic) ?? 0;
+    this.topicWeights.set(topic, current + 1);
+  }
+
+  /**
+   * Set or update the active project context string.
+   */
+  public setProjectContext(context: string): void {
+    this.projectContext = context;
+  }
+
+  /**
+   * Return topics ranked by relevance weight (highest first),
+   * capped at `maxTopics` for prompt size control.
+   */
+  public getTopicsByRelevance(maxTopics = 5): string[] {
+    return [...this.topicWeights.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxTopics)
+      .map(([topic]) => topic);
+  }
+
+  /**
+   * Build an `AriadneContext` from the manager's current state.
+   */
+  public buildContext(mode: AriadneMode): AriadneContext {
+    return {
+      mode,
+      projectContext: this.projectContext,
+      recentTopics: this.getTopicsByRelevance(),
+    };
+  }
+
+  /**
+   * Build a fully composed prompt with mode boundary reminder and weighted context.
+   * Delegates to `buildAriadnePromptWithContext` with the manager's current state.
+   */
+  public buildPromptWithContext(mode: AriadneMode): string {
+    return buildAriadnePromptWithContext(mode, this.buildContext(mode));
+  }
+}

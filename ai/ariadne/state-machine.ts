@@ -179,6 +179,150 @@ export interface AriadneContext {
 }
 
 /**
+ * Structured entry for audit log storage.
+ * The application layer is responsible for persisting these entries.
+ */
+export interface AuditLogEntry {
+  readonly event:
+    | "admin_elevation_success"
+    | "admin_elevation_failure"
+    | "security_violation";
+  readonly timestamp: number;
+  readonly detail: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Minimal audit logger interface — the application layer supplies a concrete
+ * implementation (e.g. write to file, emit to SIEM, append to DB).
+ */
+export interface AuditLogger {
+  log(entry: AuditLogEntry): void;
+  logSecurityViolation(detail: {
+    toolName: string;
+    attemptedMode: AriadneMode;
+    allowedTools: readonly string[];
+    timestamp: number;
+  }): void;
+}
+
+/**
+ * Thrown when a tool is invoked outside its permitted mode.
+ */
+export class SecurityViolationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SecurityViolationError";
+  }
+}
+
+/**
+ * Administrative session manager with timed expiration.
+ *
+ * Wraps `switchToAdminMode` with session lifecycle management.
+ * All elevation attempts — successful or not — are recorded via `AuditLogger`.
+ *
+ * @param auditLogger       Receives all elevation and termination audit events.
+ * @param sessionDurationMs Session lifetime in milliseconds (default: 1 hour).
+ *                          Override in high-security environments for shorter windows.
+ */
+export class AdministrativeSession {
+  private static readonly DEFAULT_SESSION_DURATION_MS = 3_600_000; // 1 hour
+  private sessionExpiry: number | null = null;
+
+  constructor(
+    private readonly auditLogger: AuditLogger,
+    private readonly sessionDurationMs: number = AdministrativeSession.DEFAULT_SESSION_DURATION_MS,
+  ) {}
+
+  /**
+   * Validate token and establish a timed administrative session.
+   *
+   * Returns `{ success: true, expiresAt }` on a valid token, or
+   * `{ success: false }` on failure. A failure is always audit-logged.
+   */
+  public elevateSession(
+    authToken: string,
+    knownTokenHash: string,
+  ): { success: boolean; expiresAt?: number } {
+    const mode = switchToAdminMode(authToken, knownTokenHash);
+
+    if (mode === AriadneMode.ADMINISTRATIVE) {
+      const expiresAt = Date.now() + this.sessionDurationMs;
+      this.sessionExpiry = expiresAt;
+      this.auditLogger.log({
+        event: "admin_elevation_success",
+        timestamp: Date.now(),
+        detail: { expiresAt },
+      });
+      return { success: true, expiresAt };
+    }
+
+    this.auditLogger.log({
+      event: "admin_elevation_failure",
+      timestamp: Date.now(),
+      detail: {},
+    });
+    return { success: false };
+  }
+
+  /**
+   * Return true if an administrative session is currently active and unexpired.
+   */
+  public isSessionValid(): boolean {
+    return this.sessionExpiry !== null && Date.now() < this.sessionExpiry;
+  }
+
+  /**
+   * Force session termination (manual logout or emergency stop).
+   */
+  public terminateSession(): void {
+    this.sessionExpiry = null;
+  }
+}
+
+/**
+ * Runtime tool guard that validates every tool execution against the current mode.
+ *
+ * Prevents cross-mode tool access at the execution layer, not just the UI layer.
+ * Any unauthorised attempt is audit-logged before throwing `SecurityViolationError`.
+ */
+export class ToolGuard {
+  constructor(
+    private readonly stateMachine: { currentMode: AriadneMode },
+    private readonly auditLogger: AuditLogger,
+  ) {}
+
+  /**
+   * Validate a tool execution request against the current mode's allowed tools.
+   *
+   * Returns the validated request payload on success.
+   * Throws `SecurityViolationError` when the tool is not permitted in the current mode.
+   */
+  public validateToolExecution(
+    toolName: string,
+    input: unknown,
+  ): { toolName: string; input: unknown; timestamp: number } {
+    const currentMode = this.stateMachine.currentMode;
+    const allowedTools = MODE_TOOLS[currentMode];
+
+    if (!allowedTools.includes(toolName)) {
+      const timestamp = Date.now();
+      this.auditLogger.logSecurityViolation({
+        toolName,
+        attemptedMode: currentMode,
+        allowedTools,
+        timestamp,
+      });
+      throw new SecurityViolationError(
+        `Tool '${toolName}' not permitted in ${currentMode} mode`,
+      );
+    }
+
+    return { toolName, input, timestamp: Date.now() };
+  }
+}
+
+/**
  * Render an AriadneContext into the inline CURRENT CONTEXT block that is
  * prepended to every prompt.
  */

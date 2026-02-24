@@ -16,6 +16,9 @@
     "prompt_builder": "ai/ariadne/prompt-builder.ts"
   },
 
+  "agent_spec": "agents/ariadne.yaml",
+  "provider_config": "providers/llm_config.yaml",
+
   "modes": {
     "operational": {
       "default": true,

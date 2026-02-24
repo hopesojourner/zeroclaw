@@ -303,10 +303,15 @@ def validate_mode_transitions() -> List[Tuple[str, bool, str]]:
 
     OPERATIONAL = "operational"
     COMPANION = "companion"
+    ADMINISTRATIVE = "administrative"
 
     COMPANION_PHRASES = [
         "ariadne, companion mode",
         "switch to companion",
+    ]
+    ADMINISTRATIVE_PHRASES = [
+        "enter administrative mode",
+        "ariadne, admin mode",
     ]
     TASK_INDICATORS = [
         "code", "debug", "analyze", "plan", "budget",
@@ -315,6 +320,9 @@ def validate_mode_transitions() -> List[Tuple[str, bool, str]]:
 
     def detect_mode_switch(text: str, current: str) -> str:
         lower = text.lower()
+        for phrase in ADMINISTRATIVE_PHRASES:
+            if phrase in lower:
+                return ADMINISTRATIVE
         for phrase in COMPANION_PHRASES:
             if phrase in lower:
                 return COMPANION
@@ -338,6 +346,14 @@ def validate_mode_transitions() -> List[Tuple[str, bool, str]]:
          "how are you doing?", COMPANION, COMPANION),
         ("companion phrase takes precedence over task indicator",
          "ariadne, companion mode — then code something", OPERATIONAL, COMPANION),
+        ("administrative activation phrase",
+         "enter administrative mode", OPERATIONAL, ADMINISTRATIVE),
+        ("admin shorthand phrase",
+         "ariadne, admin mode", COMPANION, ADMINISTRATIVE),
+        ("administrative phrase takes precedence over task indicator",
+         "enter administrative mode and debug the logs", OPERATIONAL, ADMINISTRATIVE),
+        ("no match retains current administrative mode",
+         "show system status", ADMINISTRATIVE, ADMINISTRATIVE),
     ]
 
     for description, user_input, current, expected in cases:

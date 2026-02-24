@@ -33,6 +33,15 @@
         "ariadne, companion mode",
         "switch to companion"
       ]
+    },
+    "administrative": {
+      "default": false,
+      "description": "System-level oversight state. Diagnostic and authoritative. Locked behind operator authentication. No companion or standard operational output permitted.",
+      "authentication": "token",
+      "activation_phrases": [
+        "enter administrative mode",
+        "ariadne, admin mode"
+      ]
     }
   },
 

@@ -54,7 +54,8 @@ export function validateOutput(text: string, mode: AriadneMode): string {
   }
 
   // Tone enforcement: companion-mode language must not leak into OPERATIONAL
-  if (mode === AriadneMode.OPERATIONAL) {
+  // or ADMINISTRATIVE responses.
+  if (mode === AriadneMode.OPERATIONAL || mode === AriadneMode.ADMINISTRATIVE) {
     for (const violation of OPERATIONAL_TONE_VIOLATIONS) {
       if (lower.includes(violation)) {
         return "Tone violation: companion language detected in operational mode";

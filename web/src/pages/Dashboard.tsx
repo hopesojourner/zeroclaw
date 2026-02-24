@@ -8,6 +8,7 @@ import {
   DollarSign,
   Radio,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { StatusResponse, CostSummary } from '@/types/api';
 import { getStatus, getCost } from '@/lib/api';
 
@@ -88,6 +89,26 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
+      <div className="bg-blue-950/30 border border-blue-800/60 rounded-xl p-5">
+        <h2 className="text-base font-semibold text-white">Quick Start (Non-coder)</h2>
+        <ol className="text-sm text-blue-200 mt-1 list-decimal list-inside space-y-0.5">
+          <li>Connect a channel in Integrations.</li>
+          <li>Open Agent and ask in plain language.</li>
+          <li>Run Doctor if anything fails.</li>
+        </ol>
+        <div className="flex flex-wrap gap-2 mt-4">
+          <Link to="/integrations" className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm">
+            Open Integrations
+          </Link>
+          <Link to="/agent" className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-100 text-sm">
+            Open Agent Chat
+          </Link>
+          <Link to="/doctor" className="px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-100 text-sm">
+            Run Doctor
+          </Link>
+        </div>
+      </div>
+
       {/* Status Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">

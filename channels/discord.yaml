@@ -1,0 +1,20 @@
+# Ariadne — Discord Channel Configuration
+#
+# Exposes operational and companion states via a Discord bot.
+# Administrative state is excluded from this channel; use the REST
+# or CLI channel for operator-level access.
+#
+# Prerequisites:
+#   - Set DISCORD_TOKEN environment variable (bot token from Discord Developer Portal)
+#   - Bot must have MESSAGE_CONTENT intent enabled
+#
+# Referenced by: agents/ariadne.yaml
+
+adapter: "discord"
+bot_token: "${DISCORD_TOKEN}"
+
+# Only operational and companion states are reachable through Discord.
+# Administrative state requires the REST API with token authentication.
+allowed_states:
+  - operational
+  - companion

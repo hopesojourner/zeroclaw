@@ -1,0 +1,20 @@
+# Ariadne — REST API Channel Configuration
+#
+# Exposes operational and administrative states via an HTTP REST API.
+# Companion state is excluded; use the Discord or CLI channel for
+# interactive companion interactions.
+#
+# Administrative endpoints require a valid operator token supplied in the
+# Authorization header (Bearer scheme). This matches the `authentication: token`
+# setting in agents/ariadne.yaml for the administrative state.
+#
+# Referenced by: agents/ariadne.yaml
+
+adapter: "rest"
+port: 8080
+
+# Operational and administrative states are reachable via REST.
+# Companion state is excluded from programmatic / API access.
+allowed_states:
+  - operational
+  - administrative

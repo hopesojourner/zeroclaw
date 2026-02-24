@@ -1,0 +1,21 @@
+# Ariadne — CLI Channel Configuration
+#
+# Exposes all three states via the local command-line interface.
+# Intended for local testing, development, and operator-level access.
+#
+# Usage:
+#   zero-claw talk --channel cli --state operational
+#   zero-claw talk --channel cli --state companion
+#   zero-claw talk --channel cli --state administrative
+#
+# Administrative state requires operator token authentication even via CLI.
+#
+# Referenced by: agents/ariadne.yaml
+
+adapter: "cli"
+
+# All states are accessible through the CLI.
+allowed_states:
+  - operational
+  - companion
+  - administrative

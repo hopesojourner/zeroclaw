@@ -17,10 +17,23 @@ const BANNED_PATTERNS: readonly string[] = [
  * Operational-mode tone violations.
  *
  * These phrases signal companion-mode tone leaking into task-oriented output.
+ * Covers warmth, emotional support, personal connection, and romantic language
+ * that must not appear in OPERATIONAL responses.
  */
 const OPERATIONAL_TONE_VIOLATIONS: readonly string[] = [
   "i feel",
   "we could cuddle",
+  "i love you",
+  "you mean so much",
+  "sending warmth",
+  "gentle reminder",
+  "you are doing great",
+  "proud of you",
+  "i'm here for you",
+  "i am here for you",
+  "you're not alone",
+  "you are not alone",
+  "holding space",
 ];
 
 /**
@@ -44,7 +57,7 @@ export function validateOutput(text: string, mode: AriadneMode): string {
   if (mode === AriadneMode.OPERATIONAL) {
     for (const violation of OPERATIONAL_TONE_VIOLATIONS) {
       if (lower.includes(violation)) {
-        return "Tone violation detected. Regenerating...";
+        return "Tone violation: companion language detected in operational mode";
       }
     }
   }

@@ -5,7 +5,14 @@ import { AriadneMode, AriadneContext, formatContext } from "./state-machine";
 const ARIADNE_DIR = path.resolve(__dirname, ".");
 
 function readSection(filename: string): string {
-  return fs.readFileSync(path.join(ARIADNE_DIR, filename), "utf8");
+  const filePath = path.join(ARIADNE_DIR, filename);
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch (err) {
+    throw new Error(
+      `Failed to load Ariadne prompt section "${filename}" from ${filePath}: ${(err as NodeJS.ErrnoException).message}`,
+    );
+  }
 }
 
 /**

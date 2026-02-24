@@ -13,6 +13,12 @@ export enum AriadneMode {
 /**
  * Keywords whose presence in a user message signals task-oriented intent and
  * forces an automatic return to OPERATIONAL mode.
+ *
+ * Note: these are single-word indicators as specified by the seed design.
+ * Activation phrases for COMPANION mode are checked first (see above), so the
+ * phrase "Ariadne, companion mode" is never misclassified even though it
+ * contains no task keyword. Callers that need stricter disambiguation may
+ * pre-process input before calling detectModeSwitch.
  */
 const TASK_INDICATORS: readonly string[] = [
   "code",

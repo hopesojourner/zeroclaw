@@ -9,7 +9,7 @@ export default function Layout() {
       <Sidebar />
 
       {/* Main area offset by sidebar width (240px / w-60) */}
-      <div className="ml-60 flex flex-col min-h-screen">
+      <div className="ml-16 sm:ml-60 flex flex-col min-h-screen">
         <Header />
 
         {/* Page content */}

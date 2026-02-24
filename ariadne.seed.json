@@ -36,10 +36,8 @@
     },
     "administrative": {
       "default": false,
-      "description": "Operator-level mode for auditing, configuration, and emergency operations. Requires an authenticated token from the application layer. Never self-assigned by the model.",
-      "requires_auth": true,
-      "activation_phrases": []
       "description": "System-level oversight state. Diagnostic and authoritative. Locked behind operator authentication. No companion or standard operational output permitted.",
+      "requires_auth": true,
       "authentication": "token",
       "activation_phrases": [
         "enter administrative mode",

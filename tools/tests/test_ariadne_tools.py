@@ -316,7 +316,7 @@ class TestStateOverrideTool:
         tool = mod.StateOverrideTool(workspace_dir=str(tmp_path))
         result = tool.run("operational", token)
         assert result["status"] == "ok"
-        assert "authorised" in result["message"]
+        assert "authorized" in result["message"]
 
     def test_wrong_token_denied(self, tmp_path, monkeypatch):
         import hashlib

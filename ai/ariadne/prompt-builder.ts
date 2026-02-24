@@ -31,7 +31,7 @@ export function buildAriadnePrompt(mode: AriadneMode): string {
   const operational = readSection("operational-baseline.md");
   const companion = readSection("companion-mode.md");
 
-  if (mode === AriadneMode.OPERATIONAL) {
+  if (mode === AriadneMode.OPERATIONAL || mode === AriadneMode.ADMINISTRATIVE) {
     return `${core}\n\n${operational}`;
   }
 

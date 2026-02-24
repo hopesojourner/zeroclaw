@@ -1,0 +1,46 @@
+# Ariadne — LLM Provider Configuration
+#
+# Maps each agent state to an Ollama backend with per-state inference parameters.
+# All three states use the same base model (mistral:latest) with different
+# temperature and context settings tuned for the interaction style of each state.
+#
+# To use a remote Ollama instance, set OLLAMA_HOST or override api_url below.
+# Default Ollama endpoint: http://localhost:11434
+#
+# Referenced by: agents/ariadne.yaml (provider: <state>)
+# ZeroClaw provider name: "ollama"  (src/providers/ollama.rs)
+
+# Shared adapter anchor — all states use the local Ollama backend.
+x-ollama-adapter: &ollama_adapter
+  adapter: "ollama"
+  model: "mistral:latest"
+
+operational:
+  <<: *ollama_adapter
+  # High-precision task execution: low temperature for deterministic output,
+  # large context window for complex codebases and multi-file analysis.
+  parameters:
+    temperature: 0.2
+    num_ctx: 8192
+    top_k: 40
+    repeat_penalty: 1.1
+
+companion:
+  <<: *ollama_adapter
+  # Warmer conversational tone: higher temperature allows more expressive
+  # variation; moderate context window; softer repeat penalty for natural flow.
+  parameters:
+    temperature: 0.7
+    num_ctx: 4096
+    top_p: 0.9
+    repeat_penalty: 1.05
+
+administrative:
+  <<: *ollama_adapter
+  # Diagnostic / system oversight: lowest temperature for highly structured,
+  # deterministic diagnostic output; reduced context and strong top_k constraint.
+  parameters:
+    temperature: 0.1
+    num_ctx: 2048
+    top_k: 20
+    repeat_penalty: 1.0

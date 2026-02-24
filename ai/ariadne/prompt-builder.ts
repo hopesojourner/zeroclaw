@@ -22,6 +22,7 @@ function readSection(filename: string): string {
  * - Core identity is always included (invariants, character).
  * - Operational baseline is always included.
  * - Companion mode layer is additive: appended only when mode === COMPANION.
+ * - Administrative mode uses a fixed diagnostic prompt; no companion layer.
  *
  * This prevents drift by keeping the monolithic seed split into auditable,
  * independently maintainable sections.
@@ -29,13 +30,28 @@ function readSection(filename: string): string {
 export function buildAriadnePrompt(mode: AriadneMode): string {
   const core = readSection("core-identity.md");
   const operational = readSection("operational-baseline.md");
-  const companion = readSection("companion-mode.md");
+
+  if (mode === AriadneMode.ADMINISTRATIVE) {
+    // Administrative state: structured diagnostic output only.
+    // No companion tone. No standard operational task execution.
+    const adminDirective = [
+      "ADMINISTRATIVE STATE",
+      "",
+      "You are Ariadne in administrative state. Provide agent health status,",
+      "state logs, constraint reports, and tool registry summaries.",
+      "Respond with structured diagnostic output only.",
+      "No operational task execution. No companion tone.",
+      "Authorised operator commands may be issued here.",
+    ].join("\n");
+    return `${core}\n\n${adminDirective}`;
+  }
 
   if (mode === AriadneMode.OPERATIONAL || mode === AriadneMode.ADMINISTRATIVE) {
     return `${core}\n\n${operational}`;
   }
 
   // COMPANION: operational baseline is still included — companion is additive
+  const companion = readSection("companion-mode.md");
   return `${core}\n\n${operational}\n\n${companion}`;
 }
 

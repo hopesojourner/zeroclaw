@@ -28,4 +28,8 @@ venv/
 *.key
 *.pem
 credentials.json
+
+# Node.js dependencies
+node_modules/
+ai/ariadne/node_modules/
 .worktrees/

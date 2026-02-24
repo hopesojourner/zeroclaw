@@ -137,6 +137,9 @@ const TASK_INDICATORS: readonly string[] = [
  * 2. Explicit companion-mode activation phrases → COMPANION
  * 3. Task-indicator keywords present             → OPERATIONAL
  * 4. No match                                    → retain current mode
+ *
+ * ADMINISTRATIVE elevation requires an authenticated token; use
+ * `switchToAdminMode` for that path.
  */
 export function detectModeSwitch(
   input: string,

@@ -46,7 +46,7 @@ export function buildAriadnePrompt(mode: AriadneMode): string {
     return `${core}\n\n${adminDirective}`;
   }
 
-  if (mode === AriadneMode.OPERATIONAL || mode === AriadneMode.ADMINISTRATIVE) {
+  if (mode === AriadneMode.OPERATIONAL) {
     return `${core}\n\n${operational}`;
   }
 

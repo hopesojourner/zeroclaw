@@ -105,7 +105,6 @@ export function switchToAdminMode(
   return crypto.timingSafeEqual(expected, actual)
     ? AriadneMode.ADMINISTRATIVE
     : null;
-  ADMINISTRATIVE = "ADMINISTRATIVE",
 }
 
 /**
@@ -138,10 +137,6 @@ const TASK_INDICATORS: readonly string[] = [
  * 2. Explicit companion-mode activation phrases → COMPANION
  * 3. Task-indicator keywords present             → OPERATIONAL
  * 4. No match                                    → retain current mode
- * 1. Explicit administrative-mode activation phrases → ADMINISTRATIVE
- * 2. Explicit companion-mode activation phrases      → COMPANION
- * 3. Task-indicator keywords present                 → OPERATIONAL
- * 4. No match                                        → retain current mode
  */
 export function detectModeSwitch(
   input: string,
@@ -153,14 +148,6 @@ export function detectModeSwitch(
   }
 
   const normalized = input.toLowerCase();
-
-  // Administrative activation (evaluated first — operator intent is unambiguous)
-  if (
-    normalized.includes("enter administrative mode") ||
-    normalized.includes("ariadne, admin mode")
-  ) {
-    return AriadneMode.ADMINISTRATIVE;
-  }
 
   // Explicit companion activation
   if (

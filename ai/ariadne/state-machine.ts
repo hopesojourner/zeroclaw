@@ -8,6 +8,7 @@
 export enum AriadneMode {
   OPERATIONAL = "OPERATIONAL",
   COMPANION = "COMPANION",
+  ADMINISTRATIVE = "ADMINISTRATIVE",
 }
 
 /**
@@ -36,9 +37,10 @@ const TASK_INDICATORS: readonly string[] = [
  * Determine the next mode given a user input string and the current mode.
  *
  * Rules (evaluated in order):
- * 1. Explicit companion-mode activation phrases → COMPANION
- * 2. Task-indicator keywords present             → OPERATIONAL
- * 3. No match                                    → retain current mode
+ * 1. Explicit administrative-mode activation phrases → ADMINISTRATIVE
+ * 2. Explicit companion-mode activation phrases      → COMPANION
+ * 3. Task-indicator keywords present                 → OPERATIONAL
+ * 4. No match                                        → retain current mode
  */
 export function detectModeSwitch(
   input: string,
@@ -46,7 +48,15 @@ export function detectModeSwitch(
 ): AriadneMode {
   const normalized = input.toLowerCase();
 
-  // Explicit activation
+  // Administrative activation (evaluated first — operator intent is unambiguous)
+  if (
+    normalized.includes("enter administrative mode") ||
+    normalized.includes("ariadne, admin mode")
+  ) {
+    return AriadneMode.ADMINISTRATIVE;
+  }
+
+  // Explicit companion activation
   if (
     normalized.includes("ariadne, companion mode") ||
     normalized.includes("switch to companion")
@@ -54,7 +64,7 @@ export function detectModeSwitch(
     return AriadneMode.COMPANION;
   }
 
-  // Automatic deactivation if technical query appears
+  // Reversion to operational on any task-indicator keyword
   if (TASK_INDICATORS.some((k) => normalized.includes(k))) {
     return AriadneMode.OPERATIONAL;
   }

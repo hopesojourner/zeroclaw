@@ -31,3 +31,6 @@ Dockerfile* text eol=lf
 *.dll binary
 *.exe binary
 *.a binary
+
+# CHANGELOG entries are append-only; use union merge to preserve both sides
+CHANGELOG.md merge=union

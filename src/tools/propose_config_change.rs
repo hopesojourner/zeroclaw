@@ -340,8 +340,8 @@ mod tests {
         let mut entries = tokio::fs::read_dir(&proposals_dir).await.unwrap();
         let entry = entries.next_entry().await.unwrap().unwrap();
         let content = tokio::fs::read_to_string(entry.path()).await.unwrap();
-        assert!(content.contains("_(not provided)_"));   // test_plan
-        assert!(content.contains("_(not specified)_"));  // files
+        assert!(content.contains("_(not provided)_")); // test_plan
+        assert!(content.contains("_(not specified)_")); // files
     }
 
     #[tokio::test]
@@ -382,11 +382,7 @@ mod tests {
             .unwrap();
 
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Rate limit"));
+        assert!(result.error.as_deref().unwrap_or("").contains("Rate limit"));
         assert!(!tmp.path().join("ariadne/proposals").exists());
     }
 
@@ -428,7 +424,10 @@ mod tests {
 
     #[test]
     fn slugify_normalises_title() {
-        assert_eq!(slugify("Add resilience attribute"), "add-resilience-attribute");
+        assert_eq!(
+            slugify("Add resilience attribute"),
+            "add-resilience-attribute"
+        );
         assert_eq!(slugify("Fix: memory/notes path"), "fix-memory-notes-path");
         assert_eq!(slugify("  spaces  everywhere  "), "spaces-everywhere");
     }

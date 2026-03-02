@@ -33,3 +33,6 @@ credentials.json
 node_modules/
 ai/ariadne/node_modules/
 .worktrees/
+
+# Local config override (keeps personal changes out of version control)
+config.local.toml

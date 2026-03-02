@@ -212,10 +212,9 @@ mod tests {
             .await
             .unwrap();
 
-        let content =
-            tokio::fs::read_to_string(tmp.path().join("ariadne/memory/notes.md"))
-                .await
-                .unwrap();
+        let content = tokio::fs::read_to_string(tmp.path().join("ariadne/memory/notes.md"))
+            .await
+            .unwrap();
         assert!(content.contains("decision"));
         assert!(content.contains("db"));
         assert!(content.contains("Decided to use SQLite"));
@@ -229,10 +228,9 @@ mod tests {
         tool.execute(json!({"text": "Note A"})).await.unwrap();
         tool.execute(json!({"text": "Note B"})).await.unwrap();
 
-        let content =
-            tokio::fs::read_to_string(tmp.path().join("ariadne/memory/notes.md"))
-                .await
-                .unwrap();
+        let content = tokio::fs::read_to_string(tmp.path().join("ariadne/memory/notes.md"))
+            .await
+            .unwrap();
         assert!(content.contains("Note A"));
         assert!(content.contains("Note B"));
     }
@@ -265,11 +263,7 @@ mod tests {
             .await
             .unwrap();
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or("")
-            .contains("Rate limit"));
+        assert!(result.error.as_deref().unwrap_or("").contains("Rate limit"));
         assert!(!tmp.path().join("ariadne/memory/notes.md").exists());
     }
 
@@ -291,5 +285,3 @@ mod tests {
         assert!(result.is_err());
     }
 }
-
-

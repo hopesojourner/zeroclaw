@@ -3868,8 +3868,30 @@ impl Config {
             let contents = fs::read_to_string(&config_path)
                 .await
                 .context("Failed to read config file")?;
+            let local_path = zeroclaw_dir.join("config.local.toml");
+            let merged_contents = if local_path.exists() {
+                let local_contents = fs::read_to_string(&local_path).await.with_context(|| {
+                    format!(
+                        "Failed to read local config override {}",
+                        local_path.display()
+                    )
+                })?;
+                let merged = merge_toml_str(&contents, &local_contents).with_context(|| {
+                    format!(
+                        "Failed to merge config.local.toml from {}",
+                        local_path.display()
+                    )
+                })?;
+                tracing::info!(
+                    path = %local_path.display(),
+                    "Local config override applied"
+                );
+                merged
+            } else {
+                contents
+            };
             let mut config: Config =
-                toml::from_str(&contents).context("Failed to parse config file")?;
+                toml::from_str(&merged_contents).context("Failed to parse config file")?;
             // Set computed paths that are skipped during serialization
             config.config_path = config_path.clone();
             config.workspace_dir = workspace_dir;
@@ -4488,6 +4510,40 @@ async fn sync_directory(path: &Path) -> Result<()> {
     {
         let _ = path;
         Ok(())
+    }
+}
+
+/// Deep-merge two TOML strings, with values from `local_toml` overriding `base_toml`.
+///
+/// For table values the merge is recursive: keys present only in `base` are kept,
+/// keys present in `local` overwrite the corresponding `base` value, and tables are
+/// merged recursively.  All other types (arrays, scalars) from `local` replace the
+/// `base` value wholesale.
+pub(crate) fn merge_toml_str(base_toml: &str, local_toml: &str) -> Result<String> {
+    let mut base: toml::Value =
+        toml::from_str(base_toml).context("Failed to parse base config TOML")?;
+    let local: toml::Value =
+        toml::from_str(local_toml).context("Failed to parse local config override TOML")?;
+    merge_toml_values(&mut base, local);
+    toml::to_string(&base).context("Failed to re-serialize merged config TOML")
+}
+
+fn merge_toml_values(base: &mut toml::Value, local: toml::Value) {
+    match (base, local) {
+        (toml::Value::Table(base_table), toml::Value::Table(local_table)) => {
+            for (key, local_val) in local_table {
+                if let (Some(base_entry @ toml::Value::Table(_)), toml::Value::Table(_)) =
+                    (base_table.get_mut(&key), &local_val)
+                {
+                    merge_toml_values(base_entry, local_val);
+                } else {
+                    base_table.insert(key, local_val);
+                }
+            }
+        }
+        (base_val, local_val) => {
+            *base_val = local_val;
+        }
     }
 }
 
@@ -7096,5 +7152,64 @@ require_otp_to_resume = true
             .validate()
             .expect_err("expected ttl validation failure");
         assert!(err.to_string().contains("token_ttl_secs"));
+    }
+
+    #[test]
+    async fn merge_toml_str_local_overrides_base_scalar() {
+        let base = r#"default_provider = "openrouter""#;
+        let local = r#"default_provider = "ollama""#;
+        let merged = merge_toml_str(base, local).unwrap();
+        let parsed: toml::Value = toml::from_str(&merged).unwrap();
+        assert_eq!(
+            parsed.get("default_provider").and_then(|v| v.as_str()),
+            Some("ollama")
+        );
+    }
+
+    #[test]
+    async fn merge_toml_str_base_key_preserved_when_absent_in_local() {
+        let base = r#"
+default_provider = "openrouter"
+default_temperature = 0.7
+"#;
+        let local = r#"default_provider = "ollama""#;
+        let merged = merge_toml_str(base, local).unwrap();
+        let parsed: toml::Value = toml::from_str(&merged).unwrap();
+        assert_eq!(
+            parsed.get("default_provider").and_then(|v| v.as_str()),
+            Some("ollama"),
+            "local override should win for default_provider"
+        );
+        assert_eq!(
+            parsed.get("default_temperature").and_then(|v| v.as_float()),
+            Some(0.7),
+            "base key absent in local should be preserved"
+        );
+    }
+
+    #[test]
+    async fn merge_toml_str_nested_table_is_merged_not_replaced() {
+        let base = r#"
+[gateway]
+port = 3000
+host = "127.0.0.1"
+"#;
+        let local = r#"
+[gateway]
+port = 8080
+"#;
+        let merged = merge_toml_str(base, local).unwrap();
+        let parsed: toml::Value = toml::from_str(&merged).unwrap();
+        let gateway = parsed.get("gateway").expect("gateway table present");
+        assert_eq!(
+            gateway.get("port").and_then(|v| v.as_integer()),
+            Some(8080),
+            "local port should override base"
+        );
+        assert_eq!(
+            gateway.get("host").and_then(|v| v.as_str()),
+            Some("127.0.0.1"),
+            "base host should be preserved when absent in local"
+        );
     }
 }
